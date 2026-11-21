@@ -1,0 +1,151 @@
+<!doctype html><html><head><meta charset="utf-8"><title>YOLO Studio</title>
+<style>
+body{font-family:system-ui,Segoe UI,sans-serif;margin:0;background:#f4f6fa;color:#222}
+header{display:flex;gap:8px;align-items:center;padding:8px 14px;background:#fff;border-bottom:1px solid #d5d9e0;flex-wrap:wrap}
+button,select,input{background:#fff;color:#222;border:1px solid #b9bfca;border-radius:5px;padding:5px 10px;font-size:14px}
+button{cursor:pointer}button:hover{background:#e8eefb}
+.tab.on{background:#2d6cdf;color:#fff;border-color:#2d6cdf}
+main{padding:12px}.hide{display:none!important}
+#ann{display:flex;gap:12px}#list{width:200px;height:74vh;overflow:auto;font-size:13px;background:#fff;border:1px solid #d5d9e0;border-radius:5px;margin-top:6px}
+#list div{padding:4px 8px;cursor:pointer;border-bottom:1px solid #eef0f4}#list div:hover{background:#eef3fd}#list div.cur{background:#2d6cdf;color:#fff}
+#list div.done:before{content:"\2714  ";color:#1a9c3a}#list div.cur.done:before{color:#fff}
+canvas{background:#e9ecf1;cursor:crosshair;max-width:100%;border:1px solid #c5cad3;margin-top:6px}
+table{border-collapse:collapse;background:#fff}td,th{border:1px solid #d0d5de;padding:4px 10px}
+label{display:block;margin:7px 0}.card{background:#fff;border:1px solid #d5d9e0;padding:12px;margin:10px 0;border-radius:8px}
+pre{white-space:pre-wrap;color:#b00020}a{color:#1a56c4}
+#save{padding:3px 10px;border-radius:12px;font-size:13px;background:#e4e7ee}
+#save.saving{background:#fff3cd;color:#8a6d00}#save.saved{background:#d4f5dd;color:#146c2e}#save.err{background:#fde0e0;color:#b00020}
+#err{display:none;background:#fde0e0;color:#b00020;padding:6px 14px;font-size:13px}
+</style></head><body>
+<div id="err"></div>
+<header><b>YOLO Studio</b>
+<select id="proj"></select><button onclick="newProj()">+ New project</button>
+<button class="tab on" onclick="tab('ann',this)">Annotate</button>
+<button class="tab" onclick="tab('train',this)">Train (Colab)</button>
+<button class="tab" onclick="tab('colab',this)">Google / Colab setup</button>
+<span id="stats"></span> <span id="save">ready</span></header>
+<main>
+<div id="ann"><div>
+ <input type="file" id="files" multiple accept="image/*" hidden onchange="upload(this.files)">
+ <input type="file" id="folder" webkitdirectory hidden onchange="upload(this.files)">
+ <button onclick="$('files').click()">Upload images</button> <button onclick="$('folder').click()">Upload folder</button>
+ <button onclick="delImg()">Delete image</button> <a href="#" onclick="exportZip();return false">Export YOLO zip</a>
+ <div id="list"></div></div>
+ <div><div>Class: <select id="cls"></select> <button onclick="addCls()">+ class</button>
+ <small>Drag = draw box | 1-9 = class | Del = remove selected | A/D = prev/next | right-click = delete box</small></div>
+ <canvas id="canvas"></canvas></div></div>
+<div id="train" class="hide">
+ <div class="card"><h3>Training parameters</h3>
+ <label>Train on <select id="target" onchange="targetChg()"><option value="local">This computer / server (CPU or local GPU)</option><option value="colab">Google Colab (Drive)</option></select>
+ <span id="devbox"> Device <select id="device"><option value="auto">auto (GPU if found, else CPU)</option><option value="cpu">CPU</option><option value="0">GPU 0</option><option value="1">GPU 1</option></select></span></label>
+ <div id="engine" class="card" style="background:#f7f9fc"></div>
+ <label>Model <select id="model"><option>yolo26n.pt</option><option>yolo26s.pt</option><option>yolo26m.pt</option><option>yolo26l.pt</option><option>yolo26x.pt</option><option>yolo11n.pt</option><option>yolo11s.pt</option><option>yolo11m.pt</option><option>yolov8n.pt</option><option>yolov8s.pt</option><option>yolov8m.pt</option></select></label>
+ <label>Epochs <input id="epochs" type="number" value="50"></label>
+ <label>Image size <input id="imgsz" type="number" value="640"></label>
+ <label>Batch <input id="batch" type="number" value="16"></label>
+ <label>Patience <input id="patience" type="number" value="50"></label>
+ <label>lr0 <input id="lr0" type="number" step="0.001" value="0.01"></label>
+ <label>Optimizer <select id="optimizer"><option>auto</option><option>SGD</option><option>Adam</option><option>AdamW</option></select></label>
+ <label>Val split <input id="valsplit" type="number" step="0.05" value="0.2"> Test split <input id="testsplit" type="number" step="0.05" value="0.1"></label>
+ <button onclick="startTrain()" style="background:#2d6cdf;color:#fff">Start training</button> <span id="tmsg"></span></div>
+ <div id="joblist"></div></div>
+<div id="colab" class="hide"><div class="card">
+ <h3>1. Sign in with Google</h3>
+ <div id="acct"></div>
+ <button id="loginb" onclick="login()">Sign in with Google</button> <button onclick="logout()">Sign out</button>
+ <p><small>Sign-in needs your <code>client_secret.json</code> (Google Cloud OAuth "Desktop app" client): <input type="file" accept=".json" onchange="uploadSecret(this.files[0])"> <span id="csmsg"></span></small></p>
+ <p><small>Images, labels and models are stored in your Drive under <code>My Drive/YoloStudio</code>. A browser window opens for the Gmail sign-in.</small></p>
+ <button onclick="syncNow()">Sync current project to Drive</button> <span id="smsg"></span>
+ <h3>Or: no Google Cloud setup (Drive for Desktop)</h3>
+ <p><small>Install Google Drive for Desktop, sign in with your Gmail, then enter your synced My Drive path, e.g. <code>G:\My Drive</code>.</small></p>
+ <input id="dpath" size="30" placeholder="G:\My Drive"> <button onclick="saveFs()">Use this folder</button> <span id="fsmsg"></span>
+ <p><small>In this mode: <a href="/api/colab/notebook">download the worker notebook</a> (or save it into your Drive), open it in Colab and Run all.</small></p>
+ <h3>2. Open the training worker in Colab (no copy/paste)</h3>
+ <button onclick="openColab()">Open in Colab</button>
+ <p><small>Saved to your Drive and opened directly in Colab. There: Runtime > Change runtime type > GPU, then Runtime > Run all, and allow Drive access. Leave it running.</small></p>
+</div></div></main>
+<script>
+window.onerror=function(m,s,l){var e=document.getElementById('err');e.style.display='block';e.textContent='Script error: '+m+' (line '+l+')'};
+var P=null,info={classes:[],images:[],annotated:[]},cur=null,boxes=[],img=new Image(),sel=-1,drag=null;
+function $(id){return document.getElementById(id)}
+function J(u,o){return fetch(u,o).then(function(r){return r.json().catch(function(){return {}}).then(function(b){if(!r.ok)throw new Error(b.detail||r.status);return b})})}
+function jpost(u,b,m){return J(u,{method:m||'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})}
+function setSave(s,t){var e=$('save');e.className=s;e.textContent=t}
+function colors(i){return 'hsl('+(i*67%360)+',90%,45%)'}
+function tab(t,b){['ann','train','colab'].forEach(function(x){$(x).classList.toggle('hide',x!=t)});
+ document.querySelectorAll('.tab').forEach(function(e){e.classList.remove('on')});b.classList.add('on');if(t=='train'){loadJobs();targetChg()}if(t=='colab')authStat()}
+async function loadProjects(){var l=await J('/api/projects');$('proj').innerHTML=l.map(function(x){return '<option>'+x+'</option>'}).join('');
+ if(l.length){P=(P&&l.indexOf(P)>=0)?P:l[0];$('proj').value=P;await load()}}
+$('proj').onchange=function(){P=$('proj').value;cur=null;load()};
+async function newProj(){var n=prompt('Project name');if(!n)return;var c=prompt('Class names, comma separated','')||'';
+ try{await jpost('/api/projects',{name:n,classes:c.split(',').map(function(s){return s.trim()}).filter(Boolean)});P=n;cur=null;await loadProjects()}catch(e){alert(e.message)}}
+function renderList(){$('stats').textContent=info.annotated.length+'/'+info.images.length+' annotated';
+ var l=$('list');l.innerHTML='';info.images.forEach(function(n){var d=document.createElement('div');d.textContent=n;
+  if(info.annotated.indexOf(n)>=0)d.className+=' done';if(n==cur)d.className+=' cur';d.onclick=function(){open_(n)};l.appendChild(d)})}
+async function load(){info=await J('/api/projects/'+encodeURIComponent(P));
+ $('cls').innerHTML=info.classes.map(function(c,i){return '<option value="'+i+'">'+(i+1)+': '+c+'</option>'}).join('');
+ renderList();if(!cur&&info.images.length)open_(info.images[0])}
+async function upload(fl){if(!P){alert('Create a project first');return}setSave('saving','uploading...');
+ var fd=new FormData();for(var i=0;i<fl.length;i++)fd.append('files',fl[i]);
+ try{var r=await J('/api/projects/'+encodeURIComponent(P)+'/upload',{method:'POST',body:fd});setSave('saved','added '+r.added+' images')}catch(e){setSave('err',e.message)}
+ $('files').value='';$('folder').value='';load()}
+async function addCls(){var n=prompt('New class name');if(!n)return;info.classes.push(n);await jpost('/api/projects/'+encodeURIComponent(P)+'/classes',info.classes,'PUT');load()}
+async function delImg(){if(!cur||!confirm('Delete '+cur+'?'))return;await J('/api/projects/'+encodeURIComponent(P)+'/image/'+encodeURIComponent(cur),{method:'DELETE'});cur=null;load()}
+async function save(){if(!cur)return;setSave('saving','saving...');
+ try{await jpost('/api/projects/'+encodeURIComponent(P)+'/labels/'+encodeURIComponent(cur),boxes,'PUT');setSave('saved','saved '+boxes.length+' box(es)')}catch(e){setSave('err','save failed: '+e.message)}}
+async function open_(n){if(cur&&cur!=n)await save();cur=n;
+ boxes=await J('/api/projects/'+encodeURIComponent(P)+'/labels/'+encodeURIComponent(n));sel=-1;
+ img=new Image();img.onload=function(){var s=Math.min(1,(innerWidth-300)/img.width,(innerHeight-140)/img.height);cv.width=img.width*s;cv.height=img.height*s;draw()};
+ img.src='/api/projects/'+encodeURIComponent(P)+'/image/'+encodeURIComponent(n);renderList()}
+var cv=$('canvas'),ctx=cv.getContext('2d');
+function draw(){ctx.drawImage(img,0,0,cv.width,cv.height);boxes.forEach(function(b,i){var c=b[0],x=b[1],y=b[2],w=b[3],h=b[4],W=cv.width,H=cv.height;
+ ctx.strokeStyle=colors(c);ctx.lineWidth=i==sel?4:2;ctx.strokeRect((x-w/2)*W,(y-h/2)*H,w*W,h*H);ctx.fillStyle=colors(c);ctx.font='13px sans-serif';ctx.fillText(info.classes[c]||c,(x-w/2)*W+2,(y-h/2)*H-3)});
+ if(drag){ctx.strokeStyle='#000';ctx.setLineDash([4,3]);ctx.strokeRect(drag.x0,drag.y0,drag.x1-drag.x0,drag.y1-drag.y0);ctx.setLineDash([])}}
+function pos(e){var r=cv.getBoundingClientRect();return [(e.clientX-r.left)*cv.width/r.width,(e.clientY-r.top)*cv.height/r.height]}
+function hit(px,py){for(var i=boxes.length-1;i>=0;i--){var b=boxes[i];if(Math.abs(px/cv.width-b[1])<b[3]/2&&Math.abs(py/cv.height-b[2])<b[4]/2)return i}return -1}
+async function refreshStats(){info=await J('/api/projects/'+encodeURIComponent(P));renderList();draw()}
+async function commit(){await save();refreshStats()}
+cv.onmousedown=function(e){var p=pos(e);if(e.button==2){var i=hit(p[0],p[1]);if(i>=0){boxes.splice(i,1);sel=-1;draw();commit()}return}drag={x0:p[0],y0:p[1],x1:p[0],y1:p[1]}};
+cv.onmousemove=function(e){if(drag){var p=pos(e);drag.x1=p[0];drag.y1=p[1];draw()}};
+cv.onmouseup=function(){if(!drag)return;var d=drag;drag=null;var w=Math.abs(d.x1-d.x0),h=Math.abs(d.y1-d.y0);
+ if(w<5||h<5){sel=hit(d.x0,d.y0);draw();return}
+ if(!info.classes.length){alert('Add a class first (+ class)');draw();return}
+ boxes.push([+$('cls').value,(d.x0+d.x1)/2/cv.width,(d.y0+d.y1)/2/cv.height,w/cv.width,h/cv.height]);sel=boxes.length-1;draw();commit()};
+cv.oncontextmenu=function(e){e.preventDefault()};
+document.onkeydown=function(e){if(['INPUT','SELECT'].indexOf(e.target.tagName)>=0)return;var k=e.key;
+ if(k>='1'&&k<='9'&&info.classes[k-1]){$('cls').value=k-1;if(sel>=0){boxes[sel][0]=k-1;draw();commit()}}
+ if(k=='Delete'&&sel>=0){boxes.splice(sel,1);sel=-1;draw();commit()}
+ var i=info.images.indexOf(cur);if(k=='d'&&i<info.images.length-1)open_(info.images[i+1]);if(k=='a'&&i>0)open_(info.images[i-1])};
+function exportZip(){location='/api/projects/'+encodeURIComponent(P)+'/export'}
+function targetChg(){$('devbox').style.display=$('target').value=='local'?'':'none';$('engine').style.display=$('target').value=='local'?'':'none';if($('target').value=='local')engineStat()}
+var engTimer=null;
+async function engineStat(){try{var s=await J('/api/local/status');var h;
+ if(s.installed)h='Engine ready: Ultralytics '+s.version+' | detected device: <b>'+s.device+'</b>';
+ else if(s.installing)h='Installing training engine (this takes a few minutes)...<pre style="color:#555">'+(s.log||'')+'</pre>';
+ else h='Training engine not installed. <button onclick="installEng(false)">Install (CPU)</button> <button onclick="installEng(true)">Install (NVIDIA GPU, CUDA 12.4)</button>';
+ $('engine').innerHTML=h;if(s.installing&&!engTimer)engTimer=setInterval(engineStat,5000);if(!s.installing&&engTimer){clearInterval(engTimer);engTimer=null}}catch(e){}}
+async function installEng(g){await jpost('/api/local/install',{gpu:g});$('engine').textContent='Installing...';engineStat()}
+async function startTrain(){await save();$('tmsg').textContent='uploading dataset to Drive...';
+ var b={target:$('target').value,device:$('device').value,model:$('model').value,epochs:+$('epochs').value,imgsz:+$('imgsz').value,batch:+$('batch').value,patience:+$('patience').value,lr0:+$('lr0').value,optimizer:$('optimizer').value,val_split:+$('valsplit').value,test_split:+$('testsplit').value};
+ try{var r=await jpost('/api/projects/'+encodeURIComponent(P)+'/train',b);$('tmsg').textContent='queued: '+r.job;loadJobs()}catch(e){$('tmsg').textContent='';alert(e.message)}}
+function pct(v){return v==null?'-':(v*100).toFixed(1)+'%'}
+async function loadJobs(){if(!P)return;var l=await J('/api/projects/'+encodeURIComponent(P)+'/jobs');
+ $('joblist').innerHTML=l.map(function(j){var s=j.status||{},r=s.metrics&&s.metrics.val?s.metrics:null;
+ var h='<div class="card"><b>'+j.job+'</b> - '+(s.state||'?')+' '+(s.stage||'')+' '+(s.epoch?'(epoch '+s.epoch+'/'+s.epochs+')':'');
+ if(s.state=='error')h+='<pre>'+s.error+'</pre>';
+ if(s.state=='running'&&s.metrics&&!r)h+=' | mAP50 '+pct(s.metrics['mAP50(B)'])+' P '+pct(s.metrics['precision(B)'])+' R '+pct(s.metrics['recall(B)']);
+ if(r){['val','test'].forEach(function(sp){var m=r[sp];if(!m)return;
+  h+='<h4>'+sp+'</h4><table><tr><th>class</th><th>Precision</th><th>Recall</th><th>mAP50</th><th>mAP50-95</th></tr><tr><td><b>all</b></td><td>'+pct(m.precision)+'</td><td>'+pct(m.recall)+'</td><td>'+pct(m.mAP50)+'</td><td>'+pct(m['mAP50-95'])+'</td></tr>';
+  for(var c in m.per_class){var v=m.per_class[c];h+='<tr><td>'+c+'</td><td>'+pct(v.precision)+'</td><td>'+pct(v.recall)+'</td><td>'+pct(v.mAP50)+'</td><td>'+pct(v['mAP50-95'])+'</td></tr>'}h+='</table>'})}
+ if(j.fetched)h+='<p>'+j.files.filter(function(f){return f!='fetched'}).map(function(f){return '<a href="/api/projects/'+encodeURIComponent(P)+'/models/'+j.job+'/'+f+'">'+f+'</a>'}).join(' | ')+'</p>';
+ else if(s.state=='done')h+='<p>downloading weights...</p>';return h+'</div>'}).join('')}
+setInterval(function(){if(!$('train').classList.contains('hide'))loadJobs().catch(function(){})},8000);
+async function authStat(){try{var a=await J('/api/auth/status');$('acct').innerHTML=a.signed_in?'Signed in as <b>'+a.email+'</b>':(a.has_client_secret?'Not signed in':'Not signed in. <b>client_secret.json</b> is missing in the app folder (see README).');$('loginb').style.display=a.signed_in?'none':''}catch(e){}}
+async function login(){$('acct').textContent='Waiting for Google sign-in in your browser...';try{await J('/api/auth/login',{method:'POST'})}catch(e){alert(e.message)}authStat()}
+async function logout(){await J('/api/auth/logout',{method:'POST'});authStat()}
+async function syncNow(){$('smsg').textContent='syncing...';try{var r=await J('/api/projects/'+encodeURIComponent(P)+'/sync',{method:'POST'});$('smsg').textContent='uploaded '+r.uploaded+' files'}catch(e){$('smsg').textContent=e.message}}
+async function openColab(){try{var r=await J('/api/colab/open',{method:'POST'});window.open(r.url,'_blank')}catch(e){alert(e.message)}}
+async function uploadSecret(f){if(!f)return;var fd=new FormData();fd.append('file',f);try{await J('/api/auth/client_secret',{method:'POST',body:fd});$('csmsg').textContent='saved - now click Sign in with Google';authStat()}catch(e){$('csmsg').textContent=e.message}}
+async function saveFs(){try{await jpost('/api/colab',{mode:'fs',drive_path:$('dpath').value},'PUT');$('fsmsg').textContent='connected (Drive for Desktop)'}catch(e){$('fsmsg').textContent=e.message}}
+loadProjects().catch(function(e){setSave('err',e.message)});
+</script></body></html>

@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pyyaml
+google-api-python-client
+google-auth-oauthlib
