@@ -11,6 +11,22 @@ PROJ = ROOT / "projects"
 IMG_EXT = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 app = FastAPI(title="YOLO Studio")
 
+if os.environ.get("APP_PASSWORD"):  # protect the app when hosted publicly
+    import base64, secrets
+
+    @app.middleware("http")
+    async def basic_auth(request, call_next):
+        h = request.headers.get("authorization", "")
+        ok = False
+        if h.startswith("Basic "):
+            try:
+                ok = secrets.compare_digest(base64.b64decode(h[6:]).decode().partition(":")[2], os.environ["APP_PASSWORD"])
+            except Exception:
+                pass
+        if not ok:
+            return Response(status_code=401, headers={"WWW-Authenticate": 'Basic realm="YOLO Studio"'})
+        return await call_next(request)
+
 
 def pdir(name):
     if not re.fullmatch(r"[\w\- ]{1,60}", name):
